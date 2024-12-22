@@ -1,14 +1,14 @@
 # mask-go
 A shining mask implementation written in Golang. It is intended to be used with masks controlled by the Shining mask app.
 
-It seems that there are several different vendor models avaialable, but they share the same app/protocol. E.g. `Lumen Couture LED Face Changing Mask`.
+It seems that there are several different vendor models avaialable, but they share the same app/protocol. E.g. `Lumen Couture LED Face Changing Mask`. This fork uses the `Lumen Couture LED Shining Glasses` which uses the same protocol except `MaskHeight` is set to `12` pixels instead of `16`. Height is defined in `mask/draw.go`.
 
 [Play store link of the control app](https://play.google.com/store/apps/details?id=cn.com.heaton.shiningmask)
 
-Features: 
+Features:
 - Connection with mask over BLE (using tinygo.org/x/bluetooth)
-- Controlling the mask remotely (Brightness, Static image, Anmination, Text speed, Text color) 
-- Uploading/showing text on the mask 
+- Controlling the mask remotely (Brightness, Static image, Anmination, Text speed, Text color)
+- Uploading/showing text on the mask
 
 ![](image.png)
 ## Usage
@@ -26,13 +26,13 @@ mask.SetText("Hello world")
 
 A demo application is included in the [main.go](main.go) file.
 
-GoDoc can be found [here](https://pkg.go.dev/github.com/GoneUp/mask-go) 
-## Protocol 
-The mask commuicates over Bluetooth LE with the mask. The protocol iself is fairly simply, however there is a AES ECB encryption. 
+GoDoc can be found [here](https://pkg.go.dev/github.com/GoneUp/mask-go)
+## Protocol
+The mask commuicates over Bluetooth LE with the mask. The protocol iself is fairly simply, however there is a AES ECB encryption.
 
 Please review this reddit post, it contains all basic protocol details and the AES key used: https://www.reddit.com/r/ReverseEngineering/comments/lr9xxr/comment/h14nm39/?utm_source=reddit&utm_medium=web2x&context=3
 
-The most complicated bit of the mask-go is the text upload. The mask just accepts a bitmap/colors in a very custom format. 
+The most complicated bit of the mask-go is the text upload. The mask just accepts a bitmap/colors in a very custom format.
 So to upload text, we have to draw it to a bitmap, convert it accordingly to the protcol and send it in custom manner to the app.
 
 The protocol is implemented in [mask.go](mask/mask.go) and [draw.go](mask/draw.go).
@@ -40,10 +40,10 @@ The protocol is implemented in [mask.go](mask/mask.go) and [draw.go](mask/draw.g
 Braindumping protocol details:
 
 ```
-Methods 
+Methods
 
 ccroll mode:
-05MODEnn 
+05MODEnn
 nn 01 = steady
 nn 02 = blink
 nn 03 = scroll left
@@ -63,7 +63,7 @@ speed:
 set text color mode:
 03M<00/01><00-07>
 
-00-03= text gradients 
+00-03= text gradients
 05-07= background animations
 
 set light
@@ -78,6 +78,8 @@ set anmiation
 set diy image
 06PLAY01nn
 
+upload
+
 
 
 Text upload:
@@ -91,15 +93,15 @@ Text upload:
 	DATCP > Mask
 	Mask > DATCPOK
 
-09DATS - 2 byte total len - 2 byte bitmap len 
+09DATS - 2 byte total len - 2 byte bitmap len
 
 Image data:
-The display of the mask is 16 pixel high, the data is sent accordingly per pixel colum. 
-For each pixel in a pixel colum a bit is set (on/off). For each colum there is also a RGB value. 
+The display of the mask is 16 pixel high, the data is sent accordingly per pixel colum.
+For each pixel in a pixel colum a bit is set (on/off). For each colum there is also a RGB value.
 
 In more formal form:
   for each column:
-    column encoded in 2byte 
+    column encoded in 2byte
       b1: line 0-7, bit 0-7
       b2: line 7-15, bit 0-7
   for each colum
