@@ -56,7 +56,7 @@ func InitAndConnect(MoreLogging bool) error {
 	err := adapter.Scan(func(adapter *bluetooth.Adapter, device bluetooth.ScanResult) {
 		log.Trace("found device: ", device.Address.String(), device.RSSI, device.LocalName())
 
-		if strings.HasPrefix(device.LocalName(), "MASK") {
+		if strings.HasPrefix(device.LocalName(), "GLASSES-02FB6E") {
 			log.Info("found mask: ", device.LocalName())
 			adapter.StopScan()
 			ch <- device
@@ -343,7 +343,7 @@ func InitUpload(bitmap []byte, colorArray []byte) error {
 	currentUpload.completeBuffer = append(currentUpload.completeBuffer, currentUpload.colorArray...)
 	log.Debug("bitmap: ", currentUpload.bitmap)
 	log.Debug("colorArray: ", currentUpload.colorArray)
-	//log.Debug("completeBuffer: ", currentUpload.completeBuffer)
+	log.Debug("completeBuffer: ", currentUpload.completeBuffer)
 
 	//09DATS - 2 byte total len - 2 byte bitmap len
 	modeStr := []byte("DATS")
@@ -487,4 +487,22 @@ func must(action string, err error) {
 	if err != nil {
 		panic("failed to " + action + ": " + err.Error())
 	}
+}
+
+
+
+// UploadImageToMask generates crops, resizes, and uploads an image to the mask
+func UploadImageToMask(filePath string) error {
+	// Load the image
+	img, err := loadImageFromFile(filePath)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	// Prepare the image for the mask
+	bitmapMask, colorArray := prepareImageForMask(img)
+
+	// Upload the mask and color array to the mask
+	return InitUpload(bitmapMask, colorArray)
 }

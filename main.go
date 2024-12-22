@@ -65,6 +65,18 @@ func doDemoControlLoop() {
 				time.Sleep(5 * time.Second)
 			}
 
+		case "upload":
+			file := strings.TrimPrefix(cmd, "upload ")
+			if file == "" {
+				log.Info("No file specified")
+				break
+			}
+			if _, err := os.Stat(file); os.IsNotExist(err) {
+				log.Info("File does not exist")
+				break
+			}
+			mask.UploadImageToMask(file)
+
 		case "mode":
 			val, err := strconv.ParseUint(cmdSplit[1], 10, 8)
 			must("ParseInt", err)

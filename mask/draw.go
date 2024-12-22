@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	_ "image/jpeg"
 	"io/ioutil"
 	"os"
 
@@ -13,7 +14,16 @@ import (
 	"github.com/flopp/go-findfont"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
+	"github.com/nfnt/resize"
+	_ "github.com/ernyoke/imger"
 )
+
+const (
+	// MaskWidth is the width of the mask
+	MaskWidth = 40
+	// MaskHeight is the height of the mask
+	MaskHeight = 12
+);
 
 // GetTextImage generates a bitmap out of a text using the font NotoSans
 func GetTextImage(text string) [][]byte {
@@ -42,7 +52,7 @@ func GetTextImage(text string) [][]byte {
 	//setup canvas
 	textWidth, _ := getWidthOfString(c, text)
 	log.Infof("width: x %s, y %s", textWidth.X, textWidth.Y)
-	rect := image.Rect(0, 0, textWidth.X.Ceil(), 16)
+	rect := image.Rect(0, 0, textWidth.X.Ceil(), MaskHeight)
 	img := image.NewGray(rect)
 
 	//draw real string
@@ -79,7 +89,7 @@ func GetTextImage(text string) [][]byte {
 // Get the bi-dimensional pixel array
 func getPixels(img image.Image, grayImg *image.RGBA) ([][]byte, error) {
 	bounds := img.Bounds()
-	width, height := bounds.Max.X, 16
+	width, height := bounds.Max.X, MaskHeight
 
 	var pixels [][]byte
 	for x := 0; x < width; x++ {
@@ -90,7 +100,7 @@ func getPixels(img image.Image, grayImg *image.RGBA) ([][]byte, error) {
 			gry := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
 			var binaryVal byte
 			//range up to 65k, this filters out the noise a bit and then set the pixel to 1
-			if gry > 25000 {
+			if gry > 15000 {
 				binaryVal = 1
 			}
 
@@ -114,6 +124,30 @@ func getWidthOfString(c *freetype.Context, s string) (fixed.Point26_6, error) {
 	return p, err
 }
 
+// ReisizeImage resizes an image to the given width and height
+func reisizeImage(img image.Image, width int, height int) (image.Image, error) {
+	newImage := resize.Resize(uint(width), uint(height), img, resize.NearestNeighbor)
+	err := png.Encode(os.Stdout, newImage)
+	if err != nil {
+		log.Error(err)
+	}
+	return newImage, nil
+}
+
+// cropImage crops an image to the given width and height
+func cropImage(img image.Image, width int, height int, x int, y int) (image.Image, error) {
+	croppedImage := img.(interface {
+		SubImage(r image.Rectangle) image.Image
+	}).SubImage(image.Rect(x, y, x+width, y+height))
+	return croppedImage, nil
+}
+
+// getImageSize returns the width and height of an image
+func getImageSize(img image.Image) (int, int) {
+	bounds := img.Bounds()
+	return bounds.Dx(), bounds.Dy()
+}
+
 // EncodeBitmapForMask converts a bitmap to the custom mask format. Height must be 16 pixel.
 func EncodeBitmapForMask(bitmap [][]byte) ([]byte, error) {
 	/*
@@ -125,7 +159,7 @@ func EncodeBitmapForMask(bitmap [][]byte) ([]byte, error) {
 	results := make([]byte, 0)
 	for i := range bitmap {
 		column := bitmap[i]
-		if len(column) != 16 {
+		if len(column) != MaskHeight {
 			log.Errorf("column %d wrong len %v", i, column)
 		}
 
@@ -202,4 +236,106 @@ func EncodeColorArrayForMask(columns int) []byte {
 		results = append(results, []byte{0xFF, 0xFF, 0xFF}...)
 	}
 	return results
+}
+
+// EncodeColorArrayFromImageForMask encodes a color array from an image
+// TODO: Cannot figure out how to send a color array to the mask
+func EncodeColorArrayFromImageForMask(img image.Image) []byte {
+	width, _ := getImageSize(img)
+
+	results := make([]byte, 0)
+	log.Infof("width %d", width)
+	for x := 0; x < width; x++ {
+		for y := 0; y < MaskHeight; y++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			results = append(results, []byte{byte(r >> 8), byte(g >> 8), byte(b >> 8)}...)
+		}
+	}
+	return results
+}
+
+func loadImageFromFile(fpath string) (image.Image, error) {
+	file, err := os.Open(fpath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		return nil, err
+	}
+
+	return img, nil
+}
+
+// prepareImageForMask prepares an image for the mask
+func prepareImageForMask(img image.Image) ([]byte, []byte) {
+	// Crop the image to the desired aspect ratio
+	maskAspect := float64(MaskWidth) / float64(MaskHeight)
+	imgWidth, imgHeight := getImageSize(img)
+	imgAspect := float64(imgWidth) / float64(imgHeight)
+	if imgAspect > maskAspect {
+		// Crop the image to the mask aspect ratio
+		newWidth := int(float64(imgHeight) * maskAspect)
+		croppedImage, err := cropImage(img, newWidth, imgHeight, (imgWidth-newWidth)/2, 0)
+		if err != nil {
+			log.Error(err)
+		}
+		log.Infof("cropped image size: %d x %d", newWidth, imgHeight)
+		img = croppedImage
+	} else if imgAspect < maskAspect {
+		// Crop the image to the mask aspect ratio
+		newHeight := int(float64(imgWidth) / maskAspect)
+		croppedImage, err := cropImage(img, imgWidth, newHeight, 0, (imgHeight-newHeight)/2)
+		if err != nil {
+			log.Error(err)
+		}
+		log.Infof("cropped image size: %d x %d", imgWidth, newHeight)
+		img = croppedImage
+	}
+
+	// Resize to make height = 16 pixels
+	imgWidth, imgHeight = getImageSize(img)
+	imgAspect = float64(imgWidth) / float64(imgHeight)
+	newHeight := MaskHeight
+	newWidth := int(float64(newHeight) * imgAspect)
+	resizedImage, err := reisizeImage(img, newWidth, newHeight)
+	if err != nil {
+		log.Error(err)
+	}
+	img = resizedImage
+	log.Infof("resized image size: %d x %d", newWidth, newHeight)
+
+	// Save the image to a file
+	out, _ := os.Create("./images/resized.png")
+	png.Encode(out, img)
+	out.Close()
+
+	// [Test] Convert the image to a bitmap
+	grayImg := image.NewRGBA(img.Bounds())
+	bitmap, err := getPixels(img, grayImg)
+	if err != nil {
+		log.Error(err)
+	}
+	log.Tracef("gray pixels %v", bitmap)
+	log.Infof("bitmap size: %d x %d", len(bitmap), len(bitmap[0]))
+
+	// [Test] Save the bitmap to a file
+	out, _ = os.Create("./images/gray.png")
+	png.Encode(out, grayImg)
+	out.Close()
+
+	// Encode the bitmap to the mask format
+	bitmapMask, err := EncodeBitmapForMask(bitmap)
+	if err != nil {
+		log.Error(err)
+	}
+	log.Infof("bitmap mask size: %d", len(bitmapMask))
+
+	// Encode the color array to the mask format
+	colorArray := EncodeColorArrayFromImageForMask(img)
+	log.Infof("color array size: %d", len(colorArray))
+
+	return bitmapMask, colorArray
 }
